@@ -6,6 +6,8 @@ DISCORD_SUMMARY_TITLE = "📝 Résumé"
 DISCORD_ERROR_FETCHING = "Erreur lors de la récupération du contenu : {error}"
 DISCORD_ERROR_SUMMARIZING = "Erreur lors de la génération du résumé : {error}"
 DISCORD_DUPLICATE_DETECTED = "Ce lien a déjà été traité dans le fil de discussion : {thread_url}"
+# Nom d'un fil automatique quand le message n'a pas de texte (image seule…)
+AUTO_THREAD_DEFAULT_NAME = "Discussion de {author}"
 
 # Coda messages
 CODA_TABLE_UPDATED = "Table Coda mise à jour avec le résumé pour {url}"

@@ -6,6 +6,7 @@ from discord.ext import commands
 
 from Modules.Commons import config, SummaryItem
 from Modules import strings
+from Modules.Discord import auto_thread
 
 logger = logging.getLogger(__name__)
 
@@ -34,6 +35,7 @@ class PiaBot(commands.Bot):
         )
         
         self.monitored_channel_ids = [int(channel_id) for channel_id in discord_config.monitored_channels]
+        self.auto_thread_channel_ids = [int(channel_id) for channel_id in discord_config.auto_thread_channels]
         self._content_processor = None
         self._summarizer = None
         self._target_handler = None
@@ -527,23 +529,47 @@ class PiaBot(commands.Bot):
         # Process commands first
         await self.process_commands(message)
         
-        # Check if the message is in a monitored channel
-        if message.channel.id not in self.monitored_channel_ids:
+        # Supported URLs (videos…) in a monitored channel: the summary flow
+        # below creates their thread.
+        monitored = message.channel.id in self.monitored_channel_ids
+        supported_urls = []
+        if monitored:
+            for url in await self._extract_urls(message.content):
+                if await self._is_supported_url(url):
+                    supported_urls.append(url)
+
+        # Otherwise, in an auto-thread channel, every message gets its own
+        # thread — never two threads for the same message.
+        if not supported_urls:
+            await self._auto_thread(message)
+
+        # Process each supported URL
+        for url in supported_urls:
+            try:
+                logger.info(f"Processing URL: {url} from message {message.id}")
+                await self._process_url(url, message)
+            except Exception as e:
+                logger.error(f"Error processing URL {url}: {e}")
+
+    async def _auto_thread(self, message: discord.Message) -> None:
+        """Create a thread for a message posted in an auto-thread channel."""
+        if not auto_thread.should_auto_thread(
+                channel_id=message.channel.id,
+                auto_channel_ids=self.auto_thread_channel_ids,
+                author_is_bot=message.author.bot,
+                is_regular_message=message.type in (discord.MessageType.default,
+                                                    discord.MessageType.reply),
+                content=message.content,
+                command_prefix=self.command_prefix):
             return
-            
-        # Check if the message contains a URL
-        urls = await self._extract_urls(message.content)
-        if not urls:
-            return
-            
-        # Process each URL
-        for url in urls:
-            if await self._is_supported_url(url):
-                try:
-                    logger.info(f"Processing URL: {url} from message {message.id}")
-                    await self._process_url(url, message)
-                except Exception as e:
-                    logger.error(f"Error processing URL {url}: {e}")
+        name = auto_thread.thread_name_from_message(
+            message.clean_content, message.author.display_name)
+        try:
+            await message.create_thread(name=name)
+            logger.info(f"Auto thread created for message {message.id} in channel {message.channel.id}")
+        except discord.HTTPException as e:
+            # Missing permission, message deleted meanwhile…: log, never crash.
+            logger.warning(f"Could not create auto thread for message {message.id}: {e}")
     
     async def on_command_error(self, ctx, error):
         """
