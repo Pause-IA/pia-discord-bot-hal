@@ -8,6 +8,9 @@ class DiscordConfig(BaseModel):
     token: str
     monitored_channels: List[str]
     command_prefix: str = "!pia"
+    # Salons où chaque nouveau message reçoit son fil (Modules/Discord/auto_thread.py).
+    # Facultatif : vide par défaut, donc sans effet sur une configuration existante.
+    auto_thread_channels: List[str] = Field(default_factory=list)
 
 class YouTubeConfig(BaseModel):
     api_key: str

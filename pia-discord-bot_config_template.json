@@ -5,7 +5,11 @@
             "CHANNEL_ID_1",
             "CHANNEL_ID_2"
         ],
-        "command_prefix": "!pia"
+        "command_prefix": "!pia",
+        "auto_thread_channels": [
+            "CHANNEL_ID_BAVARDAGES",
+            "CHANNEL_ID_ACTUALITE"
+        ]
     },
     "content": {
         "supported_domains": [
