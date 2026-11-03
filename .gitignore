@@ -35,3 +35,4 @@ ENV/
 pia-discord-bot_config.json
 pia-discord-bot.log
 data/*
+OPERATIONS.md

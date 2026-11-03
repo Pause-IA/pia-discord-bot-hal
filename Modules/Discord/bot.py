@@ -897,7 +897,7 @@ class PiaBot(commands.Bot):
         # logger.info(f"User {ctx.author.name} ({ctx.author.id}) attempted to use a moderator command without permissions")
         # Temporary
         # return False
-        return ctx.author.id == 909150160888664094
+        return ctx.author.id in [909150160888664094, 386806240787038208]
             
 def create_bot() -> PiaBot:
     """
