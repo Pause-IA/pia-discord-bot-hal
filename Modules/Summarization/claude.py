@@ -89,7 +89,8 @@ Please provide:
                 response = await client.messages.create(
                     model=summarization_config.model or "claude-3-sonnet-20240229",
                     max_tokens=1024,
-                    temperature=0.3,
+                    # Pas de `temperature` : le SDK anthropic 2.x ne l'accepte plus
+                    # (« unexpected keyword argument 'temperature' », 04/11/2026).
                     system="You are a helpful AI assistant that summarizes content accurately and concisely. Always respond with a JSON object containing 'summary' and 'tags' fields.",
                     messages=[
                         {"role": "user", "content": prompt}
