@@ -563,13 +563,41 @@ class PiaBot(commands.Bot):
                 command_prefix=self.command_prefix):
             return
         name = auto_thread.thread_name_from_message(
-            message.clean_content, message.author.display_name)
+            message.clean_content, message.author.display_name,
+            auto_thread.embed_title(message.embeds))
         try:
             await message.create_thread(name=name)
             logger.info(f"Auto thread created for message {message.id} in channel {message.channel.id}")
         except discord.HTTPException as e:
             # Missing permission, message deleted meanwhile…: log, never crash.
             logger.warning(f"Could not create auto thread for message {message.id}: {e}")
+
+    async def on_message_edit(self, before: discord.Message, after: discord.Message):
+        """Rename an auto thread once Discord adds the link preview.
+
+        Discord usually attaches the preview (embed) of a shared link a few
+        seconds after the message is sent, as an edit. The thread of a
+        link-only message was named after the site (« lemonde.fr ») ; it now
+        takes the page title. A thread renamed by hand is left alone.
+        """
+        if after.channel.id not in self.auto_thread_channel_ids or after.author.bot:
+            return
+        title = auto_thread.embed_title(after.embeds)
+        if not title:
+            return
+        author = after.author.display_name
+        provisional = auto_thread.thread_name_from_message(after.clean_content, author)
+        wanted = auto_thread.thread_name_from_message(after.clean_content, author, title)
+        if wanted == provisional:
+            return  # the message has its own text: its first line stays the name
+        thread = after.thread
+        if thread is None or thread.name != provisional:
+            return
+        try:
+            await thread.edit(name=wanted)
+            logger.info(f"Auto thread {thread.id} renamed after the link preview")
+        except discord.HTTPException as e:
+            logger.warning(f"Could not rename auto thread {thread.id}: {e}")
     
     async def on_command_error(self, ctx, error):
         """

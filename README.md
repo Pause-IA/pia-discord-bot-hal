@@ -29,7 +29,11 @@ List channel IDs in `discord.auto_thread_channels` to give every new message
 posted there its own thread, named after the message's first line (links and
 Markdown removed, 100 characters at most). Messages from bots, system messages
 and `!pia` commands are skipped. A message whose supported link (video) is
-summarised in a monitored channel keeps a single thread, the summary's. An
+summarised in a monitored channel keeps a single thread, the summary's. A
+message that is only a link gets the title of the shared page: Discord usually
+adds the link preview a few seconds after the message, so the thread is first
+named after the site (`lemonde.fr`) and renamed once the preview arrives
+(threads renamed by hand are left alone). An
 empty or missing list leaves the feature off. The bot needs the *Create Public
 Threads* permission in those channels.
 
