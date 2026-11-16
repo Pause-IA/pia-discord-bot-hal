@@ -56,11 +56,34 @@ class NomDuFil(unittest.TestCase):
             "**À lire** : https://exemple.org/article?x=1 _vite_", "Antoine"),
             "À lire : lien vite")
 
-    def test_lien_seul_ou_image_seule(self):
-        self.assertEqual(auto_thread.thread_name_from_message(
-            "https://exemple.org/a", "Antoine"), "Discussion de Antoine")
+    def test_image_seule(self):
         self.assertEqual(auto_thread.thread_name_from_message("", "Antoine"),
                          "Discussion de Antoine")
+
+    def test_lien_seul_nom_du_site_en_attendant_le_titre(self):
+        self.assertEqual(auto_thread.thread_name_from_message(
+            "https://www.LeMonde.fr/pixels/article/2026/11/ia.html", "Antoine"), "lemonde.fr")
+        self.assertEqual(auto_thread.thread_name_from_message(
+            "  **https://exemple.org:8080/a**  ", "Antoine"), "exemple.org")
+
+    def test_lien_seul_titre_de_la_page(self):
+        self.assertEqual(auto_thread.thread_name_from_message(
+            "https://exemple.org/a", "Antoine", "L'IA et l'*emploi*"),
+            "L'IA et l'emploi")
+
+    def test_un_texte_garde_sa_premiere_ligne_meme_avec_un_titre(self):
+        self.assertEqual(auto_thread.thread_name_from_message(
+            "À lire ! https://exemple.org/a", "Antoine", "Titre de la page"),
+            "À lire ! lien")
+
+    def test_titre_de_l_apercu(self):
+        self.assertEqual(auto_thread.embed_title([]), "")
+        self.assertEqual(auto_thread.embed_title(
+            [SimpleNamespace(title=None), SimpleNamespace(title="  Un   titre ")]),
+            "Un titre")
+        long = auto_thread.thread_name_from_message(
+            "https://exemple.org/a", "A", "mot " * 60)
+        self.assertLessEqual(len(long), auto_thread.THREAD_NAME_LIMIT)
 
     def test_cent_caracteres_au_plus_coupe_sur_un_mot(self):
         nom = auto_thread.thread_name_from_message("mot " * 60, "Antoine")
@@ -69,8 +92,10 @@ class NomDuFil(unittest.TestCase):
 
 
 def faux_message(channel_id, content="Bonjour à tous", bot=False,
-                 type_=discord.MessageType.default):
+                 type_=discord.MessageType.default, embeds=(), thread=None):
     msg = mock.MagicMock()
+    msg.embeds = list(embeds)
+    msg.thread = thread
     msg.channel = SimpleNamespace(id=channel_id)
     msg.content = content
     msg.clean_content = content
@@ -140,6 +165,68 @@ class DansLeBot(unittest.IsolatedAsyncioTestCase):
                     faux_message(ACTUALITE, type_=discord.MessageType.pins_add)):
             await self.bot.on_message(msg)
             msg.create_thread.assert_not_awaited()
+
+    async def test_apercu_deja_la_titre_des_la_creation(self):
+        msg = faux_message(ACTUALITE, "https://exemple.org/a",
+                           embeds=[SimpleNamespace(title="Nouvelle loi sur l'IA")])
+        await self.bot.on_message(msg)
+        msg.create_thread.assert_awaited_once_with(name="Nouvelle loi sur l'IA")
+
+
+def faux_fil(nom):
+    fil = mock.MagicMock()
+    fil.name = nom
+    fil.id = 9
+    fil.edit = mock.AsyncMock()
+    return fil
+
+
+class Renommage(unittest.IsolatedAsyncioTestCase):
+    """on_message_edit : l'aperçu du lien arrive après coup."""
+
+    def setUp(self):
+        self.bot = PiaBot.__new__(PiaBot)
+        self.bot.auto_thread_channel_ids = [ACTUALITE]
+        self.apercu = [SimpleNamespace(title="Nouvelle loi sur l'IA")]
+
+    def edition(self, content="https://exemple.org/a", channel=ACTUALITE,
+                fil="exemple.org", embeds=None, bot=False):
+        thread = faux_fil(fil) if fil else None
+        after = faux_message(channel, content, bot=bot, thread=thread,
+                             embeds=self.apercu if embeds is None else embeds)
+        return faux_message(channel, content), after, thread
+
+    async def test_renomme_avec_le_titre(self):
+        before, after, fil = self.edition()
+        await self.bot.on_message_edit(before, after)
+        fil.edit.assert_awaited_once_with(name="Nouvelle loi sur l'IA")
+
+    async def test_fil_renomme_a_la_main_intouche(self):
+        before, after, fil = self.edition(fil="Mon titre à moi")
+        await self.bot.on_message_edit(before, after)
+        fil.edit.assert_not_awaited()
+
+    async def test_message_avec_texte_intouche(self):
+        before, after, fil = self.edition(content="À lire ! https://exemple.org/a",
+                                          fil="À lire ! lien")
+        await self.bot.on_message_edit(before, after)
+        fil.edit.assert_not_awaited()
+
+    async def test_sans_apercu_sans_fil_hors_salon_ou_bot(self):
+        cas = [self.edition(embeds=[]), self.edition(channel=AUTRE),
+               self.edition(bot=True)]
+        for before, after, fil in cas:
+            await self.bot.on_message_edit(before, after)
+            fil.edit.assert_not_awaited()
+        before, after, _ = self.edition(fil=None)
+        await self.bot.on_message_edit(before, after)  # pas de fil : rien, sans erreur
+
+    async def test_refus_de_discord_journalise(self):
+        before, after, fil = self.edition()
+        fil.edit.side_effect = discord.Forbidden(
+            mock.MagicMock(status=403, reason="Forbidden"), "Missing Permissions")
+        with self.assertLogs("Modules.Discord.bot", level="WARNING"):
+            await self.bot.on_message_edit(before, after)
 
 
 if __name__ == "__main__":

@@ -19,6 +19,7 @@ THREAD_NAME_LIMIT = 100  # limite imposée par Discord
 _URL = re.compile(r"https?://\S+")
 _MARKDOWN = re.compile(r"[*_~`>|#]+")
 _ESPACES = re.compile(r"\s+")
+_SITE = re.compile(r"https?://(?:www\.)?([^/?#\s:]+)", re.IGNORECASE)
 
 
 def should_auto_thread(channel_id, auto_channel_ids, author_is_bot,
@@ -39,20 +40,7 @@ def should_auto_thread(channel_id, auto_channel_ids, author_is_bot,
     return True
 
 
-def thread_name_from_message(content, author_name):
-    """Le nom du fil : la première ligne du message, nettoyée et raccourcie.
-
-    Les liens deviennent « lien », la mise en forme Markdown est retirée. Un
-    message sans texte (image seule, par exemple) donne un nom générique avec
-    l'auteur·ice.
-    """
-    premiere = next((ligne for ligne in (content or "").splitlines()
-                     if ligne.strip()), "")
-    nom = _URL.sub("lien", premiere)
-    nom = _MARKDOWN.sub("", nom)
-    nom = _ESPACES.sub(" ", nom).strip()
-    if not nom or nom == "lien":
-        nom = strings.AUTO_THREAD_DEFAULT_NAME.format(author=author_name or "?")
+def _raccourcir(nom):
     if len(nom) > THREAD_NAME_LIMIT:
         coupe = nom[:THREAD_NAME_LIMIT - 1]
         # Couper sur un espace plutôt qu'au milieu d'un mot, si possible.
@@ -61,3 +49,48 @@ def thread_name_from_message(content, author_name):
             coupe = coupe[:espace]
         nom = coupe.rstrip(" ,;:.-") + "…"
     return nom
+
+
+def _nettoyer(texte):
+    texte = _MARKDOWN.sub("", texte or "")
+    return _ESPACES.sub(" ", texte).strip()
+
+
+def embed_title(embeds):
+    """Le titre de l'aperçu que Discord affiche sous un lien (balise og:title
+    de la page), ou "" s'il n'y en a pas encore.
+
+    Discord ajoute souvent cet aperçu quelques secondes APRÈS l'envoi du
+    message : le bot le reçoit alors comme une modification du message
+    (voir `on_message_edit` dans bot.py).
+    """
+    for embed in embeds or []:
+        titre = _nettoyer(getattr(embed, "title", None) or "")
+        if titre:
+            return titre
+    return ""
+
+
+def thread_name_from_message(content, author_name, link_title=""):
+    """Le nom du fil : la première ligne du message, nettoyée et raccourcie.
+
+    Les liens deviennent « lien », la mise en forme Markdown est retirée.
+    Demande de Jeanne (11/11/2026) : un message qui n'est qu'un lien prend le
+    titre de la page partagée (`link_title`, voir `embed_title`) ; tant que ce
+    titre n'est pas connu, le nom du site (« lemonde.fr »). Un message sans
+    texte ni lien (image seule, par exemple) donne un nom générique avec
+    l'auteur·ice.
+    """
+    premiere = next((ligne for ligne in (content or "").splitlines()
+                     if ligne.strip()), "")
+    nom = _nettoyer(_URL.sub("lien", premiere))
+    if not nom or nom == "lien":
+        lien = _URL.search(content or "")
+        site = _SITE.match(lien.group(0)) if lien else None
+        if link_title:
+            nom = _nettoyer(link_title)
+        elif site:
+            nom = site.group(1).lower()
+        else:
+            nom = strings.AUTO_THREAD_DEFAULT_NAME.format(author=author_name or "?")
+    return _raccourcir(nom)
